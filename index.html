@@ -768,7 +768,7 @@
                 if (product.quantity > 0) {
                     const option = document.createElement('option');
                     option.value = product.id;
-                    option.textContent = `${product.name} (คงเหลือ: ${product.quantity})`;
+                    option.textContent = `${product.name} (฿${product.buyPrice}) - คงเหลือ: ${product.quantity}`;
                     select.appendChild(option);
                 }
             });
@@ -809,7 +809,6 @@
                 });
                 
                 Object.values(groupedProducts).forEach(group => {
-                    const avgPrice = group.totalQuantity > 0 ? group.totalValue / group.totalQuantity : 0;
                     const uniqueDates = [...new Set(group.dates)].sort();
                     const dateDisplay = uniqueDates.length > 1 ? 
                         `${formatDate(uniqueDates[0])} - ${formatDate(uniqueDates[uniqueDates.length - 1])}` : 
@@ -818,7 +817,7 @@
                     const row = document.createElement('tr');
                     row.innerHTML = `
                         <td>${group.name}</td>
-                        <td>฿${avgPrice.toFixed(2)} (เฉลี่ย)</td>
+                        <td>-</td>
                         <td>${group.totalQuantity} ชิ้น</td>
                         <td>${dateDisplay}</td>
                         <td>฿${group.totalValue.toFixed(2)}</td>
