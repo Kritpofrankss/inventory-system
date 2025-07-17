@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบจัดการคลังสินค้า</title>
+    <title>ระบบจัดการคลังสินค้า - Firebase</title>
     <style>
         * {
             margin: 0;
@@ -103,6 +103,11 @@
             transform: translateY(0);
         }
         
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
         .btn-danger {
             background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
             box-shadow: 0 4px 15px rgba(245, 101, 101, 0.4);
@@ -144,6 +149,7 @@
             font-weight: bold;
             position: sticky;
             top: 0;
+            z-index: 10;
         }
         
         td {
@@ -208,17 +214,55 @@
             font-size: 14px;
         }
         
-        .data-management {
+        .filter-options {
+            margin-bottom: 15px;
             display: flex;
             gap: 10px;
-            justify-content: center;
-            margin-bottom: 20px;
+            align-items: center;
+            flex-wrap: wrap;
         }
         
-        .data-management button {
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+        
+        .sync-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #48bb78;
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000;
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 10px;
+        }
+        
+        .sync-status.syncing {
+            background: #f6ad55;
+        }
+        
+        .sync-status.error {
+            background: #f56565;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid white;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
         }
         
         @media (max-width: 768px) {
@@ -242,8 +286,9 @@
                 padding: 8px;
             }
             
-            .data-management {
+            .filter-options {
                 flex-direction: column;
+                align-items: stretch;
             }
         }
         
@@ -261,320 +306,405 @@
                 transform: translateY(0);
             }
         }
-        
-        .status-indicator {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            background: #48bb78;
-            color: white;
-            border-radius: 20px;
-            font-size: 14px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            z-index: 1000;
-        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📦 ระบบจัดการคลังสินค้า</h1>
+        <h1>📦 ระบบจัดการคลังสินค้า (Firebase Sync)</h1>
         
-        <!-- Data Management Buttons -->
-        <div class="data-management">
-            <button class="btn-success" onclick="exportData()">
-                📥 ดาวน์โหลดข้อมูล (Excel)
-            </button>
-            <button class="btn-warning" onclick="backupData()">
-                💾 สำรองข้อมูล
-            </button>
-            <button class="btn-warning" onclick="restoreData()">
-                📂 กู้คืนข้อมูล
-            </button>
-            <button class="btn-danger" onclick="clearAllData()">
-                🗑️ ล้างข้อมูลทั้งหมด
-            </button>
+        <!-- Loading indicator -->
+        <div id="loadingIndicator" class="loading">
+            <div class="spinner" style="margin: 0 auto;"></div>
+            <p>กำลังเชื่อมต่อ Firebase...</p>
         </div>
         
-        <!-- Summary Cards -->
-        <div class="summary-cards">
-            <div class="summary-card">
-                <h3>💰 กำไรรวมทั้งหมด</h3>
-                <div class="value" id="totalProfit">฿0.00</div>
-            </div>
-            <div class="summary-card">
-                <h3>📈 ยอดขายรวม</h3>
-                <div class="value" id="totalSales">฿0.00</div>
-            </div>
-            <div class="summary-card">
-                <h3>📊 จำนวนสินค้าคงเหลือ</h3>
-                <div class="value" id="totalStock">0 ชิ้น</div>
-            </div>
-            <div class="summary-card">
-                <h3>🛒 รายการขายทั้งหมด</h3>
-                <div class="value" id="totalTransactions">0 รายการ</div>
-            </div>
-        </div>
-        
-        <!-- Add Product Form -->
-        <div class="section fade-in">
-            <h2>➕ เพิ่มสินค้าเข้าคลัง</h2>
-            <form id="addProductForm">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="productName">ชื่อสินค้า</label>
-                        <input type="text" id="productName" list="productNameList" required>
-                        <datalist id="productNameList"></datalist>
-                    </div>
-                    <div class="form-group">
-                        <label for="buyPrice">ราคาซื้อ (ต่อชิ้น)</label>
-                        <input type="number" id="buyPrice" step="0.01" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="quantity">จำนวน</label>
-                        <input type="number" id="quantity" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="buyDate">วันที่ซื้อ</label>
-                        <input type="date" id="buyDate" required>
-                    </div>
+        <div id="mainContent" style="display: none;">
+            <!-- Summary Cards -->
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <h3>💰 กำไรรวมทั้งหมด</h3>
+                    <div class="value" id="totalProfit">฿0.00</div>
                 </div>
-                <button type="submit">เพิ่มสินค้า</button>
-            </form>
-        </div>
-        
-        <!-- Sell Product Form -->
-        <div class="section fade-in">
-            <h2>💸 บันทึกการขาย</h2>
-            <form id="sellProductForm">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="sellProduct">เลือกสินค้า</label>
-                        <select id="sellProduct" required>
-                            <option value="">-- เลือกสินค้า --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="sellQuantity">จำนวนที่ขาย</label>
-                        <input type="number" id="sellQuantity" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="sellPrice">ราคาขาย (ต่อชิ้น)</label>
-                        <input type="number" id="sellPrice" step="0.01" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="sellDate">วันที่ขาย</label>
-                        <input type="date" id="sellDate" required>
-                    </div>
+                <div class="summary-card">
+                    <h3>📈 ยอดขายรวม</h3>
+                    <div class="value" id="totalSales">฿0.00</div>
                 </div>
-                <button type="submit" class="btn-success">บันทึกการขาย</button>
-            </form>
-        </div>
-        
-        <!-- Product List -->
-        <div class="section fade-in">
-            <h2>📋 รายการสินค้าในคลัง</h2>
-            
-            <!-- Filter Options -->
-            <div class="filter-options" style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
-                <label style="margin: 0;">
-                    <input type="checkbox" id="groupByName" checked onchange="updateUI()">
-                    รวมสินค้าชื่อเดียวกัน
-                </label>
-                <select id="dateFilter" onchange="updateUI()" style="max-width: 200px;">
-                    <option value="">ทุกวันที่</option>
-                </select>
+                <div class="summary-card">
+                    <h3>📊 จำนวนสินค้าคงเหลือ</h3>
+                    <div class="value" id="totalStock">0 ชิ้น</div>
+                </div>
+                <div class="summary-card">
+                    <h3>🛒 รายการขายทั้งหมด</h3>
+                    <div class="value" id="totalTransactions">0 รายการ</div>
+                </div>
             </div>
             
-            <div style="max-height: 600px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <table id="productTable">
-                    <thead>
-                        <tr>
-                            <th style="position: sticky; top: 0; z-index: 10;">ชื่อสินค้า</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">ราคาซื้อ</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">จำนวนคงเหลือ</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">วันที่ซื้อ</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">มูลค่ารวม</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">การจัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-        
-        <!-- Sales History -->
-        <div class="section fade-in">
-            <h2>📊 ประวัติการขาย</h2>
-            
-            <!-- Filter Options -->
-            <div class="filter-options" style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
-                <select id="saleDateFilter" onchange="updateUI()" style="max-width: 200px;">
-                    <option value="">ทุกวันที่</option>
-                </select>
-                <select id="saleProductFilter" onchange="updateUI()" style="max-width: 200px;">
-                    <option value="">ทุกสินค้า</option>
-                </select>
+            <!-- Add Product Form -->
+            <div class="section fade-in">
+                <h2>➕ เพิ่มสินค้าเข้าคลัง</h2>
+                <form id="addProductForm">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="productName">ชื่อสินค้า</label>
+                            <input type="text" id="productName" list="productNameList" required>
+                            <datalist id="productNameList"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="buyPrice">ราคาซื้อ (ต่อชิ้น)</label>
+                            <input type="number" id="buyPrice" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="quantity">จำนวน</label>
+                            <input type="number" id="quantity" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="buyDate">วันที่ซื้อ</label>
+                            <input type="date" id="buyDate" required>
+                        </div>
+                    </div>
+                    <button type="submit" id="addProductBtn">เพิ่มสินค้า</button>
+                </form>
             </div>
             
-            <div style="max-height: 600px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <table id="salesTable">
-                    <thead>
-                        <tr>
-                            <th style="position: sticky; top: 0; z-index: 10;">วันที่ขาย</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">ชื่อสินค้า</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">จำนวน</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">ราคาซื้อ</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">ราคาขาย</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">กำไร/ขาดทุน</th>
-                            <th style="position: sticky; top: 0; z-index: 10;">การจัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+            <!-- Sell Product Form -->
+            <div class="section fade-in">
+                <h2>💸 บันทึกการขาย</h2>
+                <form id="sellProductForm">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="sellProduct">เลือกสินค้า</label>
+                            <select id="sellProduct" required>
+                                <option value="">-- เลือกสินค้า --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="sellQuantity">จำนวนที่ขาย</label>
+                            <input type="number" id="sellQuantity" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="sellPrice">ราคาขาย (ต่อชิ้น)</label>
+                            <input type="number" id="sellPrice" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="sellDate">วันที่ขาย</label>
+                            <input type="date" id="sellDate" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-success" id="sellProductBtn">บันทึกการขาย</button>
+                </form>
+            </div>
+            
+            <!-- Product List -->
+            <div class="section fade-in">
+                <h2>📋 รายการสินค้าในคลัง</h2>
+                
+                <!-- Filter Options -->
+                <div class="filter-options">
+                    <label>
+                        <input type="checkbox" id="groupByName" checked onchange="updateUI()">
+                        รวมสินค้าชื่อเดียวกัน
+                    </label>
+                    <select id="dateFilter" onchange="updateUI()" style="max-width: 200px;">
+                        <option value="">ทุกวันที่</option>
+                    </select>
+                </div>
+                
+                <div style="max-height: 600px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <table id="productTable">
+                        <thead>
+                            <tr>
+                                <th>ชื่อสินค้า</th>
+                                <th>ราคาซื้อ</th>
+                                <th>จำนวนคงเหลือ</th>
+                                <th>วันที่ซื้อ</th>
+                                <th>มูลค่ารวม</th>
+                                <th>การจัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Sales History -->
+            <div class="section fade-in">
+                <h2>📊 ประวัติการขาย</h2>
+                
+                <!-- Filter Options -->
+                <div class="filter-options">
+                    <select id="saleDateFilter" onchange="updateUI()" style="max-width: 200px;">
+                        <option value="">ทุกวันที่</option>
+                    </select>
+                    <select id="saleProductFilter" onchange="updateUI()" style="max-width: 200px;">
+                        <option value="">ทุกสินค้า</option>
+                    </select>
+                </div>
+                
+                <div style="max-height: 600px; overflow-y: auto; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <table id="salesTable">
+                        <thead>
+                            <tr>
+                                <th>วันที่ขาย</th>
+                                <th>ชื่อสินค้า</th>
+                                <th>จำนวน</th>
+                                <th>ราคาซื้อ</th>
+                                <th>ราคาขาย</th>
+                                <th>กำไร/ขาดทุน</th>
+                                <th>การจัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
     
-    <div class="status-indicator" id="statusIndicator">
-        ✅ ข้อมูลถูกบันทึกอัตโนมัติ
+    <div class="sync-status" id="syncStatus" style="display: none;">
+        <span id="syncIcon">✅</span>
+        <span id="syncText">ข้อมูล Sync แล้ว</span>
     </div>
     
-    <script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            getDocs, 
+            deleteDoc, 
+            doc, 
+            updateDoc,
+            onSnapshot,
+            query,
+            orderBy,
+            serverTimestamp
+        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAzM281c-PXIHHddYSiiL18AqZ61hdxBf8",
+            authDomain: "inventory-system-b631e.firebaseapp.com",
+            projectId: "inventory-system-b631e",
+            storageBucket: "inventory-system-b631e.firebasestorage.app",
+            messagingSenderId: "130249103834",
+            appId: "1:130249103834:web:0ca740821cae047d89c8e3",
+            measurementId: "G-HQFTS98JLW"
+        };
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
         // Data storage
         let products = [];
         let sales = [];
-        let productIdCounter = 1;
-        let saleIdCounter = 1;
         
-        // Load data from localStorage
-        function loadData() {
-            try {
-                const savedProducts = localStorage.getItem('inventory_products');
-                const savedSales = localStorage.getItem('inventory_sales');
-                const savedProductCounter = localStorage.getItem('inventory_productIdCounter');
-                const savedSaleCounter = localStorage.getItem('inventory_saleIdCounter');
-                
-                if (savedProducts) {
-                    products = JSON.parse(savedProducts);
-                }
-                if (savedSales) {
-                    sales = JSON.parse(savedSales);
-                }
-                if (savedProductCounter) {
-                    productIdCounter = parseInt(savedProductCounter);
-                }
-                if (savedSaleCounter) {
-                    saleIdCounter = parseInt(savedSaleCounter);
-                }
-                
-                updateUI();
-                showNotification('ข้อมูลถูกโหลดเรียบร้อย', 'success');
-            } catch (error) {
-                console.error('Error loading data:', error);
-                showNotification('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
+        // Show sync status
+        function showSyncStatus(status, message) {
+            const syncStatus = document.getElementById('syncStatus');
+            const syncIcon = document.getElementById('syncIcon');
+            const syncText = document.getElementById('syncText');
+            
+            syncStatus.style.display = 'flex';
+            
+            if (status === 'syncing') {
+                syncStatus.className = 'sync-status syncing';
+                syncIcon.innerHTML = '<div class="spinner"></div>';
+                syncText.textContent = message || 'กำลัง Sync...';
+            } else if (status === 'success') {
+                syncStatus.className = 'sync-status';
+                syncIcon.textContent = '✅';
+                syncText.textContent = message || 'ข้อมูล Sync แล้ว';
+                setTimeout(() => {
+                    syncStatus.style.display = 'none';
+                }, 3000);
+            } else if (status === 'error') {
+                syncStatus.className = 'sync-status error';
+                syncIcon.textContent = '❌';
+                syncText.textContent = message || 'เกิดข้อผิดพลาด';
             }
         }
         
-        // Save data to localStorage
-        function saveData() {
-            try {
-                localStorage.setItem('inventory_products', JSON.stringify(products));
-                localStorage.setItem('inventory_sales', JSON.stringify(sales));
-                localStorage.setItem('inventory_productIdCounter', productIdCounter.toString());
-                localStorage.setItem('inventory_saleIdCounter', saleIdCounter.toString());
-                
-                // Show save indicator
-                const indicator = document.getElementById('statusIndicator');
-                indicator.style.display = 'block';
-                setTimeout(() => {
-                    indicator.style.display = 'none';
-                }, 2000);
-            } catch (error) {
-                console.error('Error saving data:', error);
-                showNotification('เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
-            }
+        // Set up real-time listeners
+        function setupRealtimeListeners() {
+            // Listen to products collection
+            const productsQuery = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
+            onSnapshot(productsQuery, (snapshot) => {
+                products = [];
+                snapshot.forEach((doc) => {
+                    products.push({ id: doc.id, ...doc.data() });
+                });
+                updateUI();
+                showSyncStatus('success', 'ข้อมูลสินค้าอัพเดต');
+            });
+            
+            // Listen to sales collection
+            const salesQuery = query(collection(db, 'sales'), orderBy('createdAt', 'desc'));
+            onSnapshot(salesQuery, (snapshot) => {
+                sales = [];
+                snapshot.forEach((doc) => {
+                    sales.push({ id: doc.id, ...doc.data() });
+                });
+                updateUI();
+                showSyncStatus('success', 'ข้อมูลการขายอัพเดต');
+            });
         }
         
         // Add product
-        document.getElementById('addProductForm').addEventListener('submit', function(e) {
+        document.getElementById('addProductForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const product = {
-                id: productIdCounter++,
-                name: document.getElementById('productName').value,
-                buyPrice: parseFloat(document.getElementById('buyPrice').value),
-                quantity: parseInt(document.getElementById('quantity').value),
-                buyDate: document.getElementById('buyDate').value,
-                originalQuantity: parseInt(document.getElementById('quantity').value)
-            };
+            const btn = document.getElementById('addProductBtn');
+            btn.disabled = true;
+            showSyncStatus('syncing', 'กำลังเพิ่มสินค้า...');
             
-            products.push(product);
-            saveData();
-            updateUI();
-            
-            // Reset form
-            this.reset();
-            document.getElementById('buyDate').valueAsDate = new Date();
-            
-            // Show success animation
-            showNotification('เพิ่มสินค้าสำเร็จ!', 'success');
+            try {
+                const product = {
+                    name: document.getElementById('productName').value,
+                    buyPrice: parseFloat(document.getElementById('buyPrice').value),
+                    quantity: parseInt(document.getElementById('quantity').value),
+                    buyDate: document.getElementById('buyDate').value,
+                    originalQuantity: parseInt(document.getElementById('quantity').value),
+                    createdAt: serverTimestamp()
+                };
+                
+                await addDoc(collection(db, 'products'), product);
+                
+                // Reset form
+                this.reset();
+                document.getElementById('buyDate').valueAsDate = new Date();
+                
+                showSyncStatus('success', 'เพิ่มสินค้าสำเร็จ!');
+                showNotification('เพิ่มสินค้าสำเร็จ!', 'success');
+            } catch (error) {
+                console.error('Error adding product:', error);
+                showSyncStatus('error', 'เกิดข้อผิดพลาด');
+                showNotification('เกิดข้อผิดพลาดในการเพิ่มสินค้า', 'error');
+            } finally {
+                btn.disabled = false;
+            }
         });
         
         // Sell product
-        document.getElementById('sellProductForm').addEventListener('submit', function(e) {
+        document.getElementById('sellProductForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const productId = parseInt(document.getElementById('sellProduct').value);
-            const product = products.find(p => p.id === productId);
-            const sellQuantity = parseInt(document.getElementById('sellQuantity').value);
+            const btn = document.getElementById('sellProductBtn');
+            btn.disabled = true;
+            showSyncStatus('syncing', 'กำลังบันทึกการขาย...');
             
-            if (product.quantity < sellQuantity) {
-                showNotification('จำนวนสินค้าไม่เพียงพอ!', 'error');
-                return;
+            try {
+                const productId = document.getElementById('sellProduct').value;
+                const product = products.find(p => p.id === productId);
+                const sellQuantity = parseInt(document.getElementById('sellQuantity').value);
+                
+                if (product.quantity < sellQuantity) {
+                    showNotification('จำนวนสินค้าไม่เพียงพอ!', 'error');
+                    return;
+                }
+                
+                const sale = {
+                    productId: productId,
+                    productName: product.name,
+                    quantity: sellQuantity,
+                    buyPrice: product.buyPrice,
+                    sellPrice: parseFloat(document.getElementById('sellPrice').value),
+                    sellDate: document.getElementById('sellDate').value,
+                    profit: (parseFloat(document.getElementById('sellPrice').value) - product.buyPrice) * sellQuantity,
+                    createdAt: serverTimestamp()
+                };
+                
+                // Add sale
+                await addDoc(collection(db, 'sales'), sale);
+                
+                // Update product quantity
+                await updateDoc(doc(db, 'products', productId), {
+                    quantity: product.quantity - sellQuantity
+                });
+                
+                // Reset form
+                this.reset();
+                document.getElementById('sellDate').valueAsDate = new Date();
+                
+                showSyncStatus('success', 'บันทึกการขายสำเร็จ!');
+                showNotification('บันทึกการขายสำเร็จ!', 'success');
+            } catch (error) {
+                console.error('Error selling product:', error);
+                showSyncStatus('error', 'เกิดข้อผิดพลาด');
+                showNotification('เกิดข้อผิดพลาดในการบันทึกการขาย', 'error');
+            } finally {
+                btn.disabled = false;
             }
-            
-            const sale = {
-                id: saleIdCounter++,
-                productId: productId,
-                productName: product.name,
-                quantity: sellQuantity,
-                buyPrice: product.buyPrice,
-                sellPrice: parseFloat(document.getElementById('sellPrice').value),
-                sellDate: document.getElementById('sellDate').value,
-                profit: (parseFloat(document.getElementById('sellPrice').value) - product.buyPrice) * sellQuantity
-            };
-            
-            sales.push(sale);
-            product.quantity -= sellQuantity;
-            
-            saveData();
-            updateUI();
-            
-            // Reset form
-            this.reset();
-            document.getElementById('sellDate').valueAsDate = new Date();
-            
-            // Show success animation
-            showNotification('บันทึกการขายสำเร็จ!', 'success');
         });
         
+        // Delete product
+        window.deleteProduct = async function(id) {
+            if (confirm('คุณแน่ใจหรือไม่ที่จะลบสินค้านี้?')) {
+                showSyncStatus('syncing', 'กำลังลบสินค้า...');
+                try {
+                    await deleteDoc(doc(db, 'products', id));
+                    
+                    // Also delete related sales
+                    const relatedSales = sales.filter(s => s.productId === id);
+                    for (const sale of relatedSales) {
+                        await deleteDoc(doc(db, 'sales', sale.id));
+                    }
+                    
+                    showSyncStatus('success', 'ลบสินค้าสำเร็จ!');
+                    showNotification('ลบสินค้าสำเร็จ!', 'success');
+                } catch (error) {
+                    console.error('Error deleting product:', error);
+                    showSyncStatus('error', 'เกิดข้อผิดพลาด');
+                    showNotification('เกิดข้อผิดพลาดในการลบสินค้า', 'error');
+                }
+            }
+        };
+        
+        // Delete sale
+        window.deleteSale = async function(id) {
+            if (confirm('คุณแน่ใจหรือไม่ที่จะลบรายการขายนี้?')) {
+                showSyncStatus('syncing', 'กำลังลบรายการขาย...');
+                try {
+                    const sale = sales.find(s => s.id === id);
+                    if (sale) {
+                        // Return quantity to product
+                        const product = products.find(p => p.id === sale.productId);
+                        if (product) {
+                            await updateDoc(doc(db, 'products', sale.productId), {
+                                quantity: product.quantity + sale.quantity
+                            });
+                        }
+                    }
+                    
+                    await deleteDoc(doc(db, 'sales', id));
+                    
+                    showSyncStatus('success', 'ลบรายการขายสำเร็จ!');
+                    showNotification('ลบรายการขายสำเร็จ!', 'success');
+                } catch (error) {
+                    console.error('Error deleting sale:', error);
+                    showSyncStatus('error', 'เกิดข้อผิดพลาด');
+                    showNotification('เกิดข้อผิดพลาดในการลบรายการขาย', 'error');
+                }
+            }
+        };
+        
         // Update UI
-        function updateUI() {
+        window.updateUI = function() {
             updateProductNameList();
             updateProductSelect();
             updateProductTable();
             updateSalesTable();
             updateSummary();
             updateDateFilters();
-        }
+        };
         
         // Update product name datalist
         function updateProductNameList() {
             const datalist = document.getElementById('productNameList');
             datalist.innerHTML = '';
             
-            // Get unique product names
             const uniqueNames = [...new Set(products.map(p => p.name))];
             
             uniqueNames.forEach(name => {
@@ -591,7 +721,6 @@
             const currentDateValue = dateFilter.value;
             dateFilter.innerHTML = '<option value="">ทุกวันที่</option>';
             
-            // Get unique dates from products
             const productDates = [...new Set(products.map(p => p.buyDate))].sort().reverse();
             productDates.forEach(date => {
                 const option = document.createElement('option');
@@ -655,13 +784,11 @@
             
             let displayProducts = [...products];
             
-            // Filter by date if selected
             if (dateFilter) {
                 displayProducts = displayProducts.filter(p => p.buyDate === dateFilter);
             }
             
             if (groupByName) {
-                // Group products by name
                 const groupedProducts = {};
                 
                 displayProducts.forEach(product => {
@@ -681,9 +808,8 @@
                     groupedProducts[product.name].ids.push(product.id);
                 });
                 
-                // Display grouped products
                 Object.values(groupedProducts).forEach(group => {
-                    const avgPrice = group.totalValue / group.totalQuantity;
+                    const avgPrice = group.totalQuantity > 0 ? group.totalValue / group.totalQuantity : 0;
                     const uniqueDates = [...new Set(group.dates)].sort();
                     const dateDisplay = uniqueDates.length > 1 ? 
                         `${formatDate(uniqueDates[0])} - ${formatDate(uniqueDates[uniqueDates.length - 1])}` : 
@@ -705,7 +831,6 @@
                     tbody.appendChild(row);
                 });
             } else {
-                // Display individual products
                 displayProducts.forEach(product => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
@@ -716,7 +841,7 @@
                         <td>฿${(product.buyPrice * product.quantity).toFixed(2)}</td>
                         <td>
                             <div class="action-buttons">
-                                <button class="btn-danger" onclick="deleteProduct(${product.id})">ลบ</button>
+                                <button class="btn-danger" onclick="deleteProduct('${product.id}')">ลบ</button>
                             </div>
                         </td>
                     `;
@@ -726,17 +851,16 @@
         }
         
         // View product details
-        function viewProductDetails(productName) {
+        window.viewProductDetails = function(productName) {
             const relatedProducts = products.filter(p => p.name === productName);
-            let detailsHTML = `<h3>รายละเอียด: ${productName}</h3><ul>`;
+            let detailsHTML = `<h3>รายละเอียด: ${productName}</h3><ul style="list-style: none; padding: 0;">`;
             
             relatedProducts.forEach(product => {
-                detailsHTML += `<li>วันที่ ${formatDate(product.buyDate)} - ${product.quantity} ชิ้น @ ฿${product.buyPrice.toFixed(2)}</li>`;
+                detailsHTML += `<li style="margin: 10px 0;">📦 วันที่ ${formatDate(product.buyDate)} - ${product.quantity} ชิ้น @ ฿${product.buyPrice.toFixed(2)}</li>`;
             });
             
             detailsHTML += '</ul>';
             
-            // Show in a simple alert (you can enhance this with a modal)
             const modal = document.createElement('div');
             modal.style.cssText = `
                 position: fixed;
@@ -744,15 +868,15 @@
                 left: 50%;
                 transform: translate(-50%, -50%);
                 background: white;
-                padding: 20px;
-                border-radius: 10px;
+                padding: 25px;
+                border-radius: 15px;
                 box-shadow: 0 10px 40px rgba(0,0,0,0.3);
                 max-width: 500px;
                 z-index: 2000;
             `;
-            modal.innerHTML = detailsHTML + '<button onclick="this.parentElement.remove()">ปิด</button>';
+            modal.innerHTML = detailsHTML + '<button style="margin-top: 20px;" onclick="this.parentElement.remove()">ปิด</button>';
             document.body.appendChild(modal);
-        }
+        };
         
         // Update sales table
         function updateSalesTable() {
@@ -764,16 +888,12 @@
             
             let displaySales = [...sales];
             
-            // Apply filters
             if (dateFilter) {
                 displaySales = displaySales.filter(s => s.sellDate === dateFilter);
             }
             if (productFilter) {
                 displaySales = displaySales.filter(s => s.productName === productFilter);
             }
-            
-            // Sort by date (newest first)
-            displaySales.sort((a, b) => new Date(b.sellDate) - new Date(a.sellDate));
             
             displaySales.forEach(sale => {
                 const row = document.createElement('tr');
@@ -787,7 +907,7 @@
                     <td class="${profitClass}">฿${sale.profit.toFixed(2)}</td>
                     <td>
                         <div class="action-buttons">
-                            <button class="btn-danger" onclick="deleteSale(${sale.id})">ลบ</button>
+                            <button class="btn-danger" onclick="deleteSale('${sale.id}')">ลบ</button>
                         </div>
                     </td>
                 `;
@@ -807,146 +927,7 @@
             document.getElementById('totalStock').textContent = `${totalStock} ชิ้น`;
             document.getElementById('totalTransactions').textContent = `${totalTransactions} รายการ`;
             
-            // Update profit color
             document.getElementById('totalProfit').className = totalProfit >= 0 ? 'value' : 'value profit-negative';
-        }
-        
-        // Delete product
-        function deleteProduct(id) {
-            if (confirm('คุณแน่ใจหรือไม่ที่จะลบสินค้านี้?')) {
-                products = products.filter(p => p.id !== id);
-                // Also remove related sales
-                sales = sales.filter(s => s.productId !== id);
-                saveData();
-                updateUI();
-                showNotification('ลบสินค้าสำเร็จ!', 'success');
-            }
-        }
-        
-        // Delete sale
-        function deleteSale(id) {
-            if (confirm('คุณแน่ใจหรือไม่ที่จะลบรายการขายนี้?')) {
-                const sale = sales.find(s => s.id === id);
-                if (sale) {
-                    // Return quantity to product
-                    const product = products.find(p => p.id === sale.productId);
-                    if (product) {
-                        product.quantity += sale.quantity;
-                    }
-                }
-                sales = sales.filter(s => s.id !== id);
-                saveData();
-                updateUI();
-                showNotification('ลบรายการขายสำเร็จ!', 'success');
-            }
-        }
-        
-        // Export data to CSV
-        function exportData() {
-            // Create CSV for products
-            let csvContent = "ชื่อสินค้า,ราคาซื้อ,จำนวนคงเหลือ,วันที่ซื้อ\n";
-            products.forEach(p => {
-                csvContent += `${p.name},${p.buyPrice},${p.quantity},${p.buyDate}\n`;
-            });
-            csvContent += "\n\nประวัติการขาย\n";
-            csvContent += "วันที่ขาย,ชื่อสินค้า,จำนวน,ราคาซื้อ,ราคาขาย,กำไร\n";
-            sales.forEach(s => {
-                csvContent += `${s.sellDate},${s.productName},${s.quantity},${s.buyPrice},${s.sellPrice},${s.profit}\n`;
-            });
-            
-            // Calculate summary
-            const totalProfit = sales.reduce((sum, sale) => sum + sale.profit, 0);
-            const totalSales = sales.reduce((sum, sale) => sum + (sale.sellPrice * sale.quantity), 0);
-            csvContent += `\n\nสรุป\n`;
-            csvContent += `กำไรรวม,${totalProfit}\n`;
-            csvContent += `ยอดขายรวม,${totalSales}\n`;
-            
-            // Download file
-            const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", `inventory_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            showNotification('ดาวน์โหลดข้อมูลสำเร็จ!', 'success');
-        }
-        
-        // Backup data
-        function backupData() {
-            const backup = {
-                products: products,
-                sales: sales,
-                productIdCounter: productIdCounter,
-                saleIdCounter: saleIdCounter,
-                backupDate: new Date().toISOString()
-            };
-            
-            const dataStr = JSON.stringify(backup, null, 2);
-            const blob = new Blob([dataStr], { type: 'application/json' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", `inventory_backup_${new Date().toISOString().split('T')[0]}.json`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            showNotification('สำรองข้อมูลสำเร็จ!', 'success');
-        }
-        
-        // Restore data
-        function restoreData() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.json';
-            
-            input.onchange = function(e) {
-                const file = e.target.files[0];
-                if (!file) return;
-                
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    try {
-                        const backup = JSON.parse(event.target.result);
-                        
-                        if (confirm('คุณแน่ใจหรือไม่ที่จะกู้คืนข้อมูล? ข้อมูลปัจจุบันจะถูกแทนที่')) {
-                            products = backup.products || [];
-                            sales = backup.sales || [];
-                            productIdCounter = backup.productIdCounter || 1;
-                            saleIdCounter = backup.saleIdCounter || 1;
-                            
-                            saveData();
-                            updateUI();
-                            showNotification('กู้คืนข้อมูลสำเร็จ!', 'success');
-                        }
-                    } catch (error) {
-                        showNotification('ไฟล์ไม่ถูกต้อง!', 'error');
-                    }
-                };
-                reader.readAsText(file);
-            };
-            
-            input.click();
-        }
-        
-        // Clear all data
-        function clearAllData() {
-            if (confirm('⚠️ คำเตือน: คุณแน่ใจหรือไม่ที่จะลบข้อมูลทั้งหมด? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
-                if (confirm('⚠️ ยืนยันอีกครั้ง: ข้อมูลทั้งหมดจะถูกลบถาวร!')) {
-                    products = [];
-                    sales = [];
-                    productIdCounter = 1;
-                    saleIdCounter = 1;
-                    saveData();
-                    updateUI();
-                    showNotification('ลบข้อมูลทั้งหมดสำเร็จ!', 'success');
-                }
-            }
         }
         
         // Format date
@@ -956,7 +937,7 @@
         }
         
         // Show notification
-        function showNotification(message, type) {
+        window.showNotification = function(message, type) {
             const notification = document.createElement('div');
             notification.style.cssText = `
                 position: fixed;
@@ -977,7 +958,7 @@
                 notification.style.animation = 'slideOut 0.3s ease';
                 setTimeout(() => notification.remove(), 300);
             }, 3000);
-        }
+        };
         
         // Add animations
         const style = document.createElement('style');
@@ -1010,11 +991,15 @@
         document.getElementById('buyDate').valueAsDate = new Date();
         document.getElementById('sellDate').valueAsDate = new Date();
         
-        // Hide status indicator initially
-        document.getElementById('statusIndicator').style.display = 'none';
-        
         // Initialize
-        loadData();
+        setupRealtimeListeners();
+        
+        // Hide loading and show main content
+        setTimeout(() => {
+            document.getElementById('loadingIndicator').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            showSyncStatus('success', 'เชื่อมต่อ Firebase สำเร็จ!');
+        }, 1500);
     </script>
 </body>
 </html>
